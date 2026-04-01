@@ -1,10 +1,9 @@
 import express from 'express';
-import nodemailer from 'nodemailer';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import { body, validationResult } from 'express-validator';
+import { createTransporter, sendContactEmail, validateContactPayload } from './lib/contact.js';
 
 dotenv.config();
 
@@ -31,50 +30,20 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Create reusable transporter object using the default SMTP transport
-const transporter = nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,
-    port: process.env.EMAIL_PORT,
-    secure: process.env.EMAIL_PORT == 465, // true for 465, false for other ports
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-    },
-});
+const transporter = createTransporter();
 
 app.post('/api/contact',
     contactLimiter,
-    [
-        body('user_name').trim().notEmpty().withMessage('Name is required').escape(),
-        body('user_email').isEmail().withMessage('Invalid email address').normalizeEmail(),
-        body('message').trim().notEmpty().withMessage('Message is required').escape()
-    ],
     async (req, res) => {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ error: errors.array()[0].msg });
+        const { data, error } = validateContactPayload(req.body);
+        if (error) {
+            return res.status(400).json({ error });
         }
 
-        const { user_name, user_email, message } = req.body;
-        console.log(`[${new Date().toISOString()}] Received contact form request from: ${user_email}`);
+        console.log(`[${new Date().toISOString()}] Received contact form request from: ${data.user_email}`);
 
         try {
-            const mailOptions = {
-                from: `"${user_name}" <${process.env.EMAIL_USER}>`,
-                to: 'info@pixelperfectevents.ae',
-                replyTo: user_email,
-                subject: `New Contact Form Message from ${user_name}`,
-                text: `Name: ${user_name}\nEmail: ${user_email}\nMessage: ${message}`,
-                html: `
-                    <h3>New Contact Form Message</h3>
-                    <p><strong>Name:</strong> ${user_name}</p>
-                    <p><strong>Email:</strong> ${user_email}</p>
-                    <p><strong>Message:</strong></p>
-                    <p>${message}</p>
-                `,
-            };
-
-            await transporter.sendMail(mailOptions);
+            await sendContactEmail(data);
             res.status(200).json({ message: 'Email sent successfully!' });
         } catch (error) {
             console.error('Error sending email:', error);
@@ -88,7 +57,7 @@ app.listen(PORT, () => {
 });
 
 // Verify connection configuration
-transporter.verify(function (error, success) {
+transporter.verify(function (error) {
     if (error) {
         console.log(`[${new Date().toISOString()}] Transporter Error:`, error);
     } else {

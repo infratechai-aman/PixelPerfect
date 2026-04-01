@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { Mail, Phone, MapPin, Send, Loader2 } from 'lucide-react';
 import './Contact.css';
-import { db } from '../firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
 const Contact = () => {
     const formRef = useRef();
@@ -30,12 +30,17 @@ const Contact = () => {
         setStatus({ type: '', message: '' });
 
         try {
-            const docRef = await addDoc(collection(db, "contacts"), {
-                ...formData,
-                timestamp: serverTimestamp()
+            const response = await fetch(`${API_BASE_URL}/api/contact`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData),
             });
 
-            if (docRef.id) {
+            const data = await response.json();
+
+            if (response.ok) {
                 setLoading(false);
                 setStatus({ type: 'success', message: 'Message sent successfully! We will get back to you soon.' });
                 setFormData({
@@ -46,7 +51,7 @@ const Contact = () => {
                     message: ''
                 });
             } else {
-                throw new Error('Failed to send message.');
+                throw new Error(data.error || 'Failed to send message.');
             }
         } catch (error) {
             setLoading(false);
@@ -54,7 +59,6 @@ const Contact = () => {
             console.error('Contact form error:', error);
         }
     };
-
 
     return (
         <section id="contact" className="contact-section section-padding">
